@@ -17,10 +17,15 @@
     "start:check": "node us2check.js",
     "start:task": "node us2task.js",
     "start:prfix": "node prfix.js",
-    "start:prreview": "node prreview.js"
+    "start:prreview": "node prreview.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "clipboardy": "^4.0.0",
     "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.17"
   }
 }
