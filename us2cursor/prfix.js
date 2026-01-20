@@ -89,8 +89,12 @@ function extractPendingComments(threads) {
   const comments = [];
   
   for (const thread of threads) {
+    // Skip deleted threads
     if (thread.isDeleted) continue;
-    if (thread.status === 'fixed' || thread.status === 'closed') continue;
+    
+    // Only include threads with status "active" (1)
+    // Skip: fixed, closed, byDesign, pending, wontFix, resolved
+    if (thread.status !== 'active' && thread.status !== 1) continue;
     
     const threadContext = thread.threadContext;
     const filePath = threadContext?.filePath || null;

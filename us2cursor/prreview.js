@@ -73,6 +73,45 @@ async function getWorkItem(id) {
   try { return azGet(`${baseUrl}/wit/workitems/${id}?api-version=7.0`); } 
   catch { return null; }
 }
+
+// Get Work Item with relations (to find parent)
+async function getWorkItemWithRelations(id) { 
+  try { return azGet(`${baseUrl}/wit/workitems/${id}?$expand=relations&api-version=7.0`); } 
+  catch { return null; }
+}
+
+// Find parent User Story from a Task
+async function findParentUserStory(wi) {
+  if (!wi.relations) return null;
+  
+  // Look for parent relation
+  const parentRel = wi.relations.find(r => 
+    r.rel === 'System.LinkTypes.Hierarchy-Reverse' // Parent link
+  );
+  
+  if (!parentRel) return null;
+  
+  // Extract parent ID from URL
+  const parentId = parentRel.url?.split('/').pop();
+  if (!parentId) return null;
+  
+  const parentWi = await getWorkItemWithRelations(parentId);
+  if (!parentWi) return null;
+  
+  const parentType = parentWi.fields['System.WorkItemType'];
+  
+  // If parent is US/PBI/Bug, return it
+  if (['User Story', 'Product Backlog Item', 'Bug'].includes(parentType)) {
+    return parentWi;
+  }
+  
+  // If parent is also a Task (nested), look for its parent recursively
+  if (parentType === 'Task') {
+    return findParentUserStory(parentWi);
+  }
+  
+  return null;
+}
 async function getPRIterations(repoId, prId) { return (await azGet(`${baseUrl}/git/repositories/${repoId}/pullrequests/${prId}/iterations?api-version=7.0`)).value; }
 async function getPRChanges(repoId, prId, iterId) { return (await azGet(`${baseUrl}/git/repositories/${repoId}/pullrequests/${prId}/iterations/${iterId}/changes?api-version=7.0`)).changeEntries || []; }
 
@@ -234,12 +273,8 @@ OUTPUT STRUCTURE:
 | 🟡 IMPORTANT | Performance | Mutation.cs | 120 | [brief] | [brief] |
 | 🔵 MINOR | CleanCode | Service.cs | 30 | [brief] | [brief] |
 
-*(If no issues, write "No issues found" instead of table)*
-
 ### 🧪 Missing Tests
 - Class.Method
-
-*(If no missing tests, write "None")*
 
 ### 📋 AC Coverage
 
@@ -290,12 +325,8 @@ OUTPUT STRUCTURE:
 | 🟡 IMPORTANT | Performance | Mutation.cs | 120 | [brief] | [brief] |
 | 🔵 MINOR | CleanCode | Service.cs | 30 | [brief] | [brief] |
 
-*(If no issues, write "No issues found" instead of table)*
-
 ### 🧪 Missing Tests
 - Class.Method
-
-*(If no missing tests, write "None")*
 
 ### 📝 Verdict
 **APPROVE**
@@ -376,11 +407,27 @@ async function main() {
     for (const item of wis) {
       const wiId = item.id || item.url?.split('/').pop();
       if (wiId) {
-        const wi = await getWorkItem(wiId);
-        if (wi && ['User Story', 'Product Backlog Item', 'Bug'].includes(wi.fields['System.WorkItemType'])) {
+        const wi = await getWorkItemWithRelations(wiId);
+        if (!wi) continue;
+        
+        const wiType = wi.fields['System.WorkItemType'];
+        
+        // If it's directly a US/PBI/Bug, use it
+        if (['User Story', 'Product Backlog Item', 'Bug'].includes(wiType)) {
           us = extractUS(wi);
           console.log(`  📝 US#${us.id}: "${us.title}"`);
           break;
+        }
+        
+        // If it's a Task, find its parent User Story
+        if (wiType === 'Task') {
+          console.log(`  🔗 Task#${wi.id} linked, searching parent US...`);
+          const parentUS = await findParentUserStory(wi);
+          if (parentUS) {
+            us = extractUS(parentUS);
+            console.log(`  📝 US#${us.id}: "${us.title}" (parent of Task#${wi.id})`);
+            break;
+          }
         }
       }
     }
