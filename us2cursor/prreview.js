@@ -19,6 +19,8 @@ import { filterCodeFiles, extractDiffContent } from './lib/diff.js';
 import { publishReview } from './lib/pr-comments.js';
 import { askQuestion, printHeader, printDivider, validateNumericId } from './lib/cli.js';
 import { PARENT_WORK_ITEM_TYPES, WORK_ITEM_TYPES, TIMEOUTS } from './lib/constants.js';
+import * as reactTailwindPrompts from './prompts/react-tailwind.js';
+import * as backendPrompts from './prompts/backend.js';
 
 loadEnvConfig(import.meta.url);
 const config = getConfig(
@@ -29,124 +31,14 @@ const config = getConfig(
 const baseUrl = buildBaseUrl(config.AZURE_ORG, config.AZURE_PROJECT);
 const authHeader = createAuthHeader(config.AZURE_PAT);
 
-const PROMPT_WITH_US = `Output a code review with the EXACT structure below.
+// Prompt mapping
+const PROMPTS = {
+  'react-tailwind': reactTailwindPrompts,
+  'backend': backendPrompts
+};
 
-Review only + lines. Be concise.
-
-CLASSIFICATION:
-- CRITICAL: Bugs, Security
-- IMPORTANT: Performance, CleanCode
-- MINOR: BestPractices
-
-VERDICT:
-- Any CRITICAL -> REQUEST CHANGES
-- Any IMPORTANT -> APPROVE WITH COMMENTS
-- Only MINOR or nothing -> APPROVE
-
-CRITICAL BUGS RULES (avoid false positives):
-- Only mark CRITICAL if bug is EVIDENT in visible code
-- Do NOT assume external/inherited methods return null
-- If method validation is unknown, mark IMPORTANT with "(verify)" note
-- Prefer false negatives over false positives for CRITICAL
-- Common safe patterns: GetCurrentUser, GetCurrentUserEmail usually throw if null
-
-RULES:
-- File column: ONLY filename (e.g. "Query.cs"), NOT full path
-- AC Coverage table MUST have 4 columns: AC | Description | Status | Where
-- Description column: 2-5 words summarizing each AC
-- Do NOT repeat the input files or CHANGES section
-- Output ONLY the review structure below
-
----
-OUTPUT STRUCTURE:
----
-
-## Code Review
-
-### Good
-- [positive point]
-
-### Issues
-
-| Severity | Category | File | Line | Issue | Fix |
-|----------|----------|------|------|-------|-----|
-| CRITICAL | Bugs | Query.cs | 45 | [brief] | [brief] |
-| IMPORTANT | Performance | Mutation.cs | 120 | [brief] | [brief] |
-| MINOR | CleanCode | Service.cs | 30 | [brief] | [brief] |
-
-### Missing Tests
-- Class.Method
-
-### AC Coverage
-*(MUST include Description column with 2-5 word summary of each AC)*
-
-| AC | Description | Status | Where |
-|----|-------------|--------|-------|
-| 1 | User can upload file | Done | Service.Upload |
-| 2 | Validate file size | Missing | Not implemented |
-| 3 | Show error message | Done | Controller.Handle |
-
-### Verdict
-**APPROVE**
-
----
-*prreview*`;
-
-const PROMPT_NO_US = `Output a code review with the EXACT structure below.
-
-Review only + lines. Be concise.
-
-CLASSIFICATION:
-- CRITICAL: Bugs, Security
-- IMPORTANT: Performance, CleanCode
-- MINOR: BestPractices
-
-VERDICT:
-- Any CRITICAL -> REQUEST CHANGES
-- Any IMPORTANT -> APPROVE WITH COMMENTS
-- Only MINOR or nothing -> APPROVE
-
-CRITICAL BUGS RULES (avoid false positives):
-- Only mark CRITICAL if bug is EVIDENT in visible code
-- Do NOT assume external/inherited methods return null
-- If method validation is unknown, mark IMPORTANT with "(verify)" note
-- Prefer false negatives over false positives for CRITICAL
-- Common safe patterns: GetCurrentUser, GetCurrentUserEmail usually throw if null
-
-RULES:
-- File column: ONLY filename (e.g. "Query.cs"), NOT full path
-- Do NOT repeat the input files or CHANGES section
-- Output ONLY the review structure below
-
----
-OUTPUT STRUCTURE:
----
-
-## Code Review
-
-### Good
-- [positive point]
-
-### Issues
-
-| Severity | Category | File | Line | Issue | Fix |
-|----------|----------|------|------|-------|-----|
-| CRITICAL | Bugs | Query.cs | 45 | [brief] | [brief] |
-| IMPORTANT | Performance | Mutation.cs | 120 | [brief] | [brief] |
-| MINOR | CleanCode | Service.cs | 30 | [brief] | [brief] |
-
-### Missing Tests
-- Class.Method
-
-### Verdict
-**APPROVE**
-
----
-*prreview*
-No US linked`;
-
-async function review(prTitle, files, us) {
-  const prompt = us ? PROMPT_WITH_US : PROMPT_NO_US;
+async function review(prTitle, files, us, promptModule) {
+  const prompt = us ? promptModule.PROMPT_WITH_US : promptModule.PROMPT_NO_US;
   const usContext = us ? `\nUS#${us.id}: ${us.title}\nAC:\n${us.ac}` : '';
 
   return callGroq(config.GROQ_API_KEY, {
@@ -193,14 +85,27 @@ async function findLinkedUserStory(repoId, prId) {
 
 async function main() {
   const prId = process.argv[2];
-  const repoArg = process.argv[3];
+  const arg3 = process.argv[3];
+  const arg4 = process.argv[4]?.toLowerCase();
+
+  // Determine if arg3 is repo or codeType
+  // If arg4 exists, arg3 is repo; otherwise arg3 is codeType
+  const repoArg = arg4 ? arg3 : undefined;
+  const codeType = arg4 || arg3?.toLowerCase();
 
   printHeader('PRREVIEW - AI Code Review (Changes Only)');
 
-  if (!prId) {
-    console.log('  Usage: prreview <pr-id> [repo]\n');
+  if (!prId || !codeType || !['be', 'fe'].includes(codeType)) {
+    console.log('  Usage: prreview <pr-id> [repo] <be|fe>\n');
     console.log('  Reviews ONLY the changes in the PR.');
     console.log('  CRITICAL (bugs/security) > IMPORTANT (perf/clean) > MINOR (tests/practices)\n');
+    console.log('  Arguments:');
+    console.log('    pr-id   Pull Request ID');
+    console.log('    repo    Repository name (optional)');
+    console.log('    be      Backend review');
+    console.log('    fe      Frontend review\n');
+    console.log('  Example: prreview 123 be\n');
+    console.log('  Example: prreview 123 myrepo fe\n');
     process.exit(1);
   }
 
@@ -255,8 +160,18 @@ async function main() {
       process.exit(0);
     }
 
+    // Select prompt based on code type
+    let selectedPrompt;
+    if (codeType === 'fe') {
+      const feType = await askQuestion('  Select frontend type (react-tailwind): ');
+      const feTypeKey = feType === 'react-tailwind' ? 'react-tailwind' : 'react-tailwind'; // default to react-tailwind
+      selectedPrompt = PROMPTS[feTypeKey] || PROMPTS['react-tailwind'];
+    } else {
+      selectedPrompt = PROMPTS['backend'];
+    }
+
     console.log('  Reviewing...\n');
-    const result = await review(pr.title, diffContent, us);
+    const result = await review(pr.title, diffContent, us, selectedPrompt);
 
     try {
       clipboard.writeSync(result);
