@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync } from 'fs';
 import * as readline from 'readline';
+import { fetchFigmaContent, isFigmaUrl } from './lib/figma.js';
 
 // Cargar .env desde el directorio del script
 const __filename = fileURLToPath(import.meta.url);
@@ -25,11 +26,13 @@ const AZURE_ORG = process.env.AZURE_ORG;
 const AZURE_PROJECT = process.env.AZURE_PROJECT;
 const AZURE_PAT = process.env.AZURE_PAT;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const FIGMA_PAT = process.env.FIGMA_PAT; // Optional - for fetching Figma content
 
 // Validar configuración
 if (!AZURE_ORG || !AZURE_PROJECT || !AZURE_PAT || !GROQ_API_KEY) {
   console.error('❌ Error: Missing environment variables in .env');
   console.error('   Required: AZURE_ORG, AZURE_PROJECT, AZURE_PAT, GROQ_API_KEY');
+  console.error('   Optional: FIGMA_PAT (for fetching Figma file content)');
   process.exit(1);
 }
 
@@ -68,10 +71,23 @@ async function getWorkItem(id) {
 
 function extractFields(workItem) {
   const f = workItem.fields;
+
+  // Parse description preserving section structure
+  let rawDesc = f['System.Description'] || '';
+  // Replace block-level tags with newlines to preserve sections
+  rawDesc = rawDesc.replace(/<\/(div|p|br|h[1-6]|li|ul|ol)>/gi, '\n');
+  rawDesc = rawDesc.replace(/<(br|hr)\s*\/?>/gi, '\n');
+  // Remove remaining HTML tags
+  rawDesc = rawDesc.replace(/<[^>]*>/g, '');
+  // Decode HTML entities
+  rawDesc = rawDesc.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+  // Clean up multiple newlines but preserve structure
+  rawDesc = rawDesc.replace(/\n{3,}/g, '\n\n').trim();
+
   return {
     id: workItem.id,
     title: f['System.Title'] || '',
-    description: (f['System.Description'] || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim(),
+    description: rawDesc,
     acceptanceCriteria: (f['Microsoft.VSTS.Common.AcceptanceCriteria'] || '').replace(/<[^>]*>/g, '\n').replace(/\n+/g, '\n').trim()
   };
 }
@@ -198,19 +214,47 @@ async function main() {
     console.log('');
     printDivider();
     
-    // Ask for Figma context
+    // Ask for Figma context (supports multiple)
     console.log('');
     console.log('  📐 FIGMA CONTEXT (optional)');
     console.log('');
-    console.log('  You can provide:');
-    console.log('    - Figma link');
-    console.log('    - Screen description');
-    console.log('    - Visible elements (buttons, fields, etc.)');
+    console.log('  You can provide Figma links or descriptions.');
+    if (FIGMA_PAT) {
+      console.log('  ✓ FIGMA_PAT detected - URLs will be fetched automatically');
+    } else {
+      console.log('  ℹ No FIGMA_PAT - URLs will be passed as-is');
+    }
+    console.log('  Press Enter after each one. Empty line to finish.');
     console.log('');
-    console.log('  (Press Enter to skip)');
-    console.log('');
-    
-    const figmaContext = await askQuestion('  Figma/Screen: ');
+
+    let figmaContext = '';
+    try {
+      const figmaInputs = [];
+      let figmaIndex = 1;
+      while (true) {
+        const input = await askQuestion(`  Figma #${figmaIndex}: `);
+        if (!input) break;
+
+        // Check if input is a Figma URL
+        if (isFigmaUrl(input)) {
+          console.log(`     ↳ Fetching Figma content...`);
+          const result = await fetchFigmaContent(input, FIGMA_PAT);
+          if (result.success) {
+            console.log(`     ✓ Extracted content from Figma`);
+            figmaInputs.push(`[Screen ${figmaIndex}]\nURL: ${input}\n${result.summary}`);
+          } else {
+            console.log(`     ⚠️  ${result.error} - using URL as description`);
+            figmaInputs.push(`[Screen ${figmaIndex}] ${result.fallback}`);
+          }
+        } else {
+          figmaInputs.push(`[Screen ${figmaIndex}] ${input}`);
+        }
+        figmaIndex++;
+      }
+      figmaContext = figmaInputs.join('\n\n');
+    } catch (err) {
+      console.log('  ⚠️  Could not read Figma input, continuing without it...');
+    }
     
     console.log('');
     console.log(`  ⚙️  Analyzing User Story with Groq (70B)...`);
