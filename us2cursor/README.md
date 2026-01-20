@@ -14,6 +14,7 @@
   - [us2b - Backend Spec](#us2b---backend-spec)
   - [us2f - Frontend Spec](#us2f---frontend-spec)
   - [us2check - Check User Story](#us2check---check-user-story)
+  - [us2task - Create Task](#us2task---create-task)
   - [prfix - Fix PR Comments](#prfix---fix-pr-comments)
   - [prreview - AI Code Review](#prreview---ai-code-review)
 - [Snippets](#snippets)
@@ -71,10 +72,11 @@ cp .env .env.local
 npm link
 ```
 
-After installation, you'll have 5 global commands available:
+After installation, you'll have 6 global commands available:
 - `us2b` - Backend specs
 - `us2f` - Frontend specs
 - `us2check` - Check/validate User Stories
+- `us2task` - Create Tasks from User Stories
 - `prfix` - Fix PR comments
 - `prreview` - AI code review for PRs
 
@@ -132,7 +134,7 @@ The tool loads configuration in this order:
    - Name: `us2cursor`
    - Expiration: 90 days or more
    - Scopes:
-     - ✅ **Work Items**: Read
+     - ✅ **Work Items**: Read & Write (required for `us2task`)
      - ✅ **Code**: Read & Write (required for `prfix` and `prreview`)
 5. Click **Create** and copy the token
 
@@ -152,6 +154,7 @@ The tool loads configuration in this order:
 | `us2b <id>` | Backend spec (HotChocolate/GraphQL) | ~50-60 tokens |
 | `us2f <id>` | Frontend spec (Components/UI) | ~70-80 tokens |
 | `us2check <id>` | Check User Story completeness | Suggestions report |
+| `us2task <id> <be\|fe>` | Create Task from User Story | Task in Azure DevOps |
 | `prfix <pr-id> [repo]` | Fix PR comments | ~40-60 tokens |
 | `prreview <pr-id> [repo]` | AI code review for PR | Full review + publish option |
 
@@ -266,9 +269,87 @@ Figma/Screen: Modal with tabs UNREAD/ALL, notification list, Mark all button
 
 ---
 
+### us2task - Create Task
+
+Creates a Task as a child of a User Story in Azure DevOps. Automatically generates title and description based on the US content.
+
+#### Usage
+
+```bash
+us2task <us-id> <be|fe>
+```
+
+Arguments:
+- `us-id` - User Story ID
+- `be` - Backend task (title prefixed with `[BE]`)
+- `fe` - Frontend task (title prefixed with `[FE]`)
+
+#### Example
+
+```bash
+# Create backend task
+us2task 199339 be
+
+# Create frontend task
+us2task 199339 fe
+```
+
+#### Flow
+
+```
+╔═══════════════════════════════════════════════════════╗
+║   US2TASK - Create Task from User Story               ║
+╚═══════════════════════════════════════════════════════╝
+
+  🔍 Fetching US#199339...
+  📋 "Notification Panel Feature"
+  👤 Will assign to: Juan Pérez
+
+  🤖 Generating BE task...
+
+───────────────────────────────────────────────────────
+
+  📝 Title: [BE] Implement notification clearing endpoint
+
+  📄 Description:
+  - Create ClearAllNotifications mutation
+  - Create ClearNotificationsInput record
+  - Add user authentication validation
+  - Implement soft delete logic
+  - Add audit logging
+  - Create unit tests
+
+───────────────────────────────────────────────────────
+
+  ✏️  Create task? (y/n/edit): y
+
+  📤 Creating task...
+
+  ✅ Task#199450 created!
+  🔗 https://dev.azure.com/org/project/_workitems/edit/199450
+```
+
+#### Options
+
+| Option | Description |
+|--------|-------------|
+| `y` | Create the task |
+| `n` | Cancel |
+| `edit` | Change the title before creating |
+
+#### Features
+
+- ✅ Auto-generates title with `[BE]` or `[FE]` prefix
+- ✅ Generates technical task list (5-10 items)
+- ✅ Links task as child of User Story
+- ✅ Assigns task to current user
+- ✅ Allows editing title before creation
+
+---
+
 ### prfix - Fix PR Comments
 
-Generates an optimized prompt from pending Pull Request comments.
+Generates an optimized prompt from pending Pull Request comments. Only includes comments with **Active** status.
 
 #### Usage
 
@@ -306,6 +387,7 @@ Generates an AI-powered code review for a Pull Request with optional publishing.
 
 - ✅ Reviews **only changed code** (diff), not entire files
 - ✅ Validates against linked **User Story** and **Acceptance Criteria**
+- ✅ Finds parent US if PR is linked to a Task
 - ✅ Classifies issues by severity (Critical, Important, Minor)
 - ✅ **Table format** for clear issue visualization
 - ✅ Posts **general comment** + **line-specific comments**
@@ -350,10 +432,10 @@ prreview 64050 AP.AlixVault.API
 
 ### 📋 AC Coverage
 
-| AC | Status | Where |
-|----|--------|-------|
-| 1 | ✅ | Service.Process() |
-| 2 | ❌ | Not implemented |
+| AC | Description | Status | Where |
+|----|-------------|--------|-------|
+| 1 | User can upload file | ✅ | Service.Upload |
+| 2 | Validate file size | ❌ | Not implemented |
 
 ### 📝 Verdict
 **APPROVE WITH COMMENTS**
@@ -429,26 +511,29 @@ Install `snippets.code-snippets` in Cursor for quick follow-up prompts.
 1. CHECK USER STORY
    └─→ us2check 123        → Verify US is complete
 
-2. GENERATE SPEC
+2. CREATE TASK
+   └─→ us2task 123 be      → Create backend task in Azure DevOps
+
+3. GENERATE SPEC
    └─→ us2b 123            → Backend prompt
    └─→ us2f 123            → Frontend prompt
 
-3. PASTE IN CURSOR
+4. PASTE IN CURSOR
    └─→ Ctrl+V + Enter      → Cursor generates code
 
-4. FOLLOW-UP (snippets)
+5. FOLLOW-UP (snippets)
    └─→ qa, qf, qv          → Quick adjustments
 
-5. VERIFY
+6. VERIFY
    └─→ qva                 → Build + tests
 
-6. CREATE PR
+7. CREATE PR
    └─→ Push + Create PR
 
-7. REVIEW OTHERS' PRs
+8. REVIEW OTHERS' PRs
    └─→ prreview 456        → AI review + publish
 
-8. FIX YOUR PR COMMENTS
+9. FIX YOUR PR COMMENTS
    └─→ prfix 456           → Get fixes prompt
 ```
 
@@ -481,7 +566,7 @@ Install `snippets.code-snippets` in Cursor for quick follow-up prompts.
 
 **Solution**:
 1. Regenerate PAT with correct permissions:
-   - Work Items: Read
+   - Work Items: Read & Write
    - Code: Read & Write
 2. Update `.env.local` with new token
 
@@ -493,11 +578,11 @@ Install `snippets.code-snippets` in Cursor for quick follow-up prompts.
 - Verify the ID exists in Azure DevOps
 - Check repository name matches exactly
 
-### Error 403 when publishing review
+### Error 403 when publishing review or creating task
 
 **Cause**: PAT doesn't have write permissions.
 
-**Solution**: Regenerate PAT with **Code: Read & Write** scope.
+**Solution**: Regenerate PAT with **Work Items: Read & Write** and **Code: Read & Write** scopes.
 
 ---
 
@@ -527,6 +612,7 @@ Install `snippets.code-snippets` in Cursor for quick follow-up prompts.
 ├── 📄 us2b.js                 ← Backend spec command
 ├── 📄 us2f.js                 ← Frontend spec command
 ├── 📄 us2check.js             ← Check/validate US command
+├── 📄 us2task.js              ← Create Task command
 ├── 📄 prfix.js                ← Fix PR comments command
 ├── 📄 prreview.js             ← AI code review command
 └── 📁 node_modules/           ← Dependencies (ignored)
@@ -546,6 +632,7 @@ Install `snippets.code-snippets` in Cursor for quick follow-up prompts.
 | 1.5.0 | Added prreview (AI code review with publish option) |
 | 1.6.0 | prreview: table format, line comments, diff-only review |
 | 1.7.0 | Environment: .env + .env.local support |
+| 1.8.0 | Added us2task (create BE/FE tasks from User Stories) |
 
 ---
 

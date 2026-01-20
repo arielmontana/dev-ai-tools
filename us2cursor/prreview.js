@@ -251,10 +251,19 @@ VERDICT:
 - Any 🟡 → APPROVE WITH COMMENTS
 - Only 🔵 or nothing → APPROVE
 
+CRITICAL BUGS RULES (avoid false positives):
+- Only mark 🔴 CRITICAL if bug is EVIDENT in visible code
+- Do NOT assume external/inherited methods return null
+- If method validation is unknown, mark 🟡 IMPORTANT with "(verify)" note
+- Prefer false negatives over false positives for CRITICAL
+- Common safe patterns: GetCurrentUser, GetCurrentUserEmail usually throw if null
+
 RULES:
 - File column: ONLY filename (e.g. "Query.cs"), NOT full path
-- Do NOT repeat the input files or CHANGES section in your output
-- Output ONLY the review structure below, nothing else
+- AC Coverage table MUST have 4 columns: AC | Description | Status | Where
+- Description column: 2-5 words summarizing each AC
+- Do NOT repeat the input files or CHANGES section
+- Output ONLY the review structure below
 
 ---
 OUTPUT STRUCTURE:
@@ -277,11 +286,13 @@ OUTPUT STRUCTURE:
 - Class.Method
 
 ### 📋 AC Coverage
+*(MUST include Description column with 2-5 word summary of each AC)*
 
-| AC | Status | Where |
-|----|--------|-------|
-| 1 | ✅ | Class.Method |
-| 2 | ❌ | Not implemented |
+| AC | Description | Status | Where |
+|----|-------------|--------|-------|
+| 1 | User can upload file | ✅ | Service.Upload |
+| 2 | Validate file size | ❌ | Not implemented |
+| 3 | Show error message | ✅ | Controller.Handle |
 
 ### 📝 Verdict
 **APPROVE**
@@ -303,10 +314,17 @@ VERDICT:
 - Any 🟡 → APPROVE WITH COMMENTS
 - Only 🔵 or nothing → APPROVE
 
+CRITICAL BUGS RULES (avoid false positives):
+- Only mark 🔴 CRITICAL if bug is EVIDENT in visible code
+- Do NOT assume external/inherited methods return null
+- If method validation is unknown, mark 🟡 IMPORTANT with "(verify)" note
+- Prefer false negatives over false positives for CRITICAL
+- Common safe patterns: GetCurrentUser, GetCurrentUserEmail usually throw if null
+
 RULES:
 - File column: ONLY filename (e.g. "Query.cs"), NOT full path
-- Do NOT repeat the input files or CHANGES section in your output
-- Output ONLY the review structure below, nothing else
+- Do NOT repeat the input files or CHANGES section
+- Output ONLY the review structure below
 
 ---
 OUTPUT STRUCTURE:
@@ -347,14 +365,14 @@ async function review(prTitle, files, us) {
       messages: [
         { 
           role: 'system', 
-          content: 'You are a code reviewer. You MUST follow the exact output structure provided. Never skip sections. Always include all headers even if empty.' 
+          content: 'You are a code reviewer. Follow the EXACT output structure. AC Coverage table MUST have 4 columns: AC | Description | Status | Where. Description is a 2-5 word summary of the acceptance criteria.' 
         },
         { 
           role: 'user', 
           content: `${prompt}${usContext}\n\nPR: ${prTitle}\n\nCHANGES:\n${files}` 
         }
       ],
-      max_tokens: 1800,
+      max_tokens: 2000,
       temperature: 0.1
     })
   });
