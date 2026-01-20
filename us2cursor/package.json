@@ -1,0 +1,24 @@
+{
+  "name": "us2cursor",
+  "version": "1.5.0",
+  "description": "Convert Azure DevOps User Stories to optimized Cursor prompts",
+  "type": "module",
+  "bin": {
+    "us2b": "./us2b.js",
+    "us2f": "./us2f.js",
+    "us2check": "./us2check.js",
+    "prfix": "./prfix.js",
+    "prreview": "./prreview.js"
+  },
+  "scripts": {
+    "start:backend": "node us2b.js",
+    "start:frontend": "node us2f.js",
+    "start:check": "node us2check.js",
+    "start:prfix": "node prfix.js",
+    "start:prreview": "node prreview.js"
+  },
+  "dependencies": {
+    "clipboardy": "^4.0.0",
+    "dotenv": "^16.3.1"
+  }
+}

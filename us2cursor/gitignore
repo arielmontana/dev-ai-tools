@@ -1,0 +1,14 @@
+# Local environment (contains secrets - NEVER commit)
+.env.local
+
+# Node
+node_modules/
+package-lock.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
