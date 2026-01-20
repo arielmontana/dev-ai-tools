@@ -15,6 +15,7 @@
   - [us2f - Frontend Spec](#us2f---frontend-spec)
   - [us2check - Check User Story](#us2check---check-user-story)
   - [prfix - Fix PR Comments](#prfix---fix-pr-comments)
+  - [prreview - AI Code Review](#prreview---ai-code-review)
 - [Snippets](#snippets)
 - [Complete Workflow](#complete-workflow)
 - [Token Savings](#token-savings)
@@ -56,42 +57,69 @@ US2CURSOR generates focused prompts:
 ### Steps
 
 ```bash
-# 1. Navigate to the tool folder
+# 1. Clone or download to your tools folder
 cd C:\Tools\us2cursor
 
 # 2. Install dependencies
 npm install
 
-# 3. Link commands globally
+# 3. Configure environment (see Configuration section)
+cp .env .env.local
+# Edit .env.local with your credentials
+
+# 4. Link commands globally
 npm link
 ```
 
-After installation, you'll have 4 global commands available:
+After installation, you'll have 5 global commands available:
 - `us2b` - Backend specs
 - `us2f` - Frontend specs
 - `us2check` - Check/validate User Stories
 - `prfix` - Fix PR comments
+- `prreview` - AI code review for PRs
 
 ---
 
 ## Configuration
 
-### Create `.env` file
+### Environment Files
 
-Create a `.env` file in `C:\Tools\us2cursor` with your credentials:
+The tool uses two environment files:
+
+| File | Purpose | Git |
+|------|---------|-----|
+| `.env` | Template with empty values | ✅ Committed |
+| `.env.local` | Your actual credentials | ❌ Ignored |
+
+### Setup
+
+```bash
+# 1. Copy template to local config
+cp .env .env.local
+
+# 2. Edit with your credentials
+notepad .env.local   # Windows
+nano .env.local      # Linux/Mac
+```
+
+### `.env.local` Configuration
 
 ```env
 # Azure DevOps Configuration
 AZURE_ORG=your-organization
 AZURE_PROJECT=your-project
 AZURE_PAT=your-personal-access-token
+AZURE_REPO=your-default-repository
 
-# Groq Configuration (free LLM)
+# AI Configuration (free)
 GROQ_API_KEY=your-groq-api-key
-
-# Optional: Default repository for prfix
-AZURE_REPO=your-repository-name
 ```
+
+### Priority
+
+The tool loads configuration in this order:
+1. `.env` (template/defaults)
+2. `.env.local` (your values) - **overrides .env**
 
 ### Get Your Credentials
 
@@ -105,7 +133,7 @@ AZURE_REPO=your-repository-name
    - Expiration: 90 days or more
    - Scopes:
      - ✅ **Work Items**: Read
-     - ✅ **Code**: Read (required for `prfix`)
+     - ✅ **Code**: Read & Write (required for `prfix` and `prreview`)
 5. Click **Create** and copy the token
 
 #### Groq API Key (Free)
@@ -125,23 +153,13 @@ AZURE_REPO=your-repository-name
 | `us2f <id>` | Frontend spec (Components/UI) | ~70-80 tokens |
 | `us2check <id>` | Check User Story completeness | Suggestions report |
 | `prfix <pr-id> [repo]` | Fix PR comments | ~40-60 tokens |
+| `prreview <pr-id> [repo]` | AI code review for PR | Full review + publish option |
 
 ---
 
 ### us2b - Backend Spec
 
 Generates an optimized backend specification for HotChocolate GraphQL (.NET).
-
-#### What it does
-
-1. Fetches User Story from Azure DevOps
-2. Extracts only backend-relevant requirements
-3. Filters out UI/frontend details
-4. Generates minimal prompt with:
-   - Mutation name and signature
-   - Input/Output record types
-   - Business rules
-   - Acceptance Criteria coverage
 
 #### Usage
 
@@ -174,27 +192,11 @@ Rules:
 AC: 1, 3, 5
 ```
 
-#### Token Usage
-
-~50-60 tokens (vs 800+ without optimization)
-
 ---
 
 ### us2f - Frontend Spec
 
 Generates an optimized frontend specification for UI components.
-
-#### What it does
-
-1. Fetches User Story from Azure DevOps
-2. Extracts only frontend-relevant requirements
-3. Filters out backend/database details
-4. Generates minimal prompt with:
-   - Component name and type
-   - UI elements
-   - States (loading, empty, error)
-   - User interactions
-   - Styling requirements
 
 #### Usage
 
@@ -220,48 +222,20 @@ UI Elements:
 - Bell icon with counter badge
 - Tab bar: "UNREAD" / "ALL"
 - Scrollable notification list
-- Action buttons (Mark all, Clear all)
 
 States:
 - Loading: spinner while fetching
 - Empty: "No notifications" message
 - Error: retry button
 
-Interactions:
-- Click bell → open modal
-- Click notification → mark as read, navigate
-- Click "Mark all" → clear unread count
-
-Styling:
-- Match Figma design specifications
-
 AC: 1, 2, 4, 6, 8
 ```
-
-#### Token Usage
-
-~70-80 tokens (vs 800+ without optimization)
 
 ---
 
 ### us2check - Check User Story
 
 Analyzes a User Story to determine if it's complete for development.
-
-#### What it does
-
-1. Fetches User Story from Azure DevOps
-2. Optionally accepts Figma/screen context
-3. Analyzes completeness:
-   - Description clarity
-   - Acceptance Criteria coverage
-   - Missing edge cases
-   - Validation rules
-   - Permission requirements
-4. Generates report with:
-   - Completeness status
-   - Missing ACs suggestions
-   - Questions for Product Owner
 
 #### Usage
 
@@ -290,67 +264,11 @@ You can provide:
 Figma/Screen: Modal with tabs UNREAD/ALL, notification list, Mark all button
 ```
 
-#### Output
-
-```
-## Status: INCOMPLETE
-
-## Description
-- ✅ Clear objective: notification panel feature
-- ✅ User roles defined
-- ❌ Missing error handling behavior
-- ❌ No loading states specified
-
-## Acceptance Criteria
-- ✅ Covered: display notifications, mark as read, tabs
-- ❌ NOT covered: empty state, error state, pagination
-
-## Suggested ACs to add
-1. AC#9: When no notifications exist, display "No notifications" message
-2. AC#10: When API fails, display error with retry option
-3. AC#11: When more than 50 notifications, implement infinite scroll
-
-## Missing validations
-- Maximum notifications to load at once
-- Notification text length limit
-
-## Edge cases not covered
-- User loses connection while marking as read
-- Notification deleted by another session
-- Concurrent updates from multiple tabs
-
-## Questions for Product Owner
-1. What happens when user has 1000+ notifications?
-2. Do notifications expire after a certain time?
-3. Should notifications sync in real-time?
-
-## Summary
-User Story needs 3 additional ACs to cover empty/error states and pagination. 
-Priority: MEDIUM - recommend adding before development.
-```
-
-#### Use Cases
-
-- Before starting development
-- During sprint planning
-- When reviewing User Stories
-- Comparing against Figma designs
-
 ---
 
 ### prfix - Fix PR Comments
 
 Generates an optimized prompt from pending Pull Request comments.
-
-#### What it does
-
-1. Fetches PR from Azure DevOps
-2. Extracts all pending (unresolved) comments
-3. Ignores system comments and resolved threads
-4. Generates minimal fix prompt with:
-   - File and line references
-   - Concrete actions
-   - Ready for Cursor
 
 #### Usage
 
@@ -358,7 +276,7 @@ Generates an optimized prompt from pending Pull Request comments.
 # With repository name
 prfix <pr-id> <repo-name>
 
-# Using default repo from .env
+# Using default repo from .env.local
 prfix <pr-id>
 ```
 
@@ -375,18 +293,106 @@ Fix PR comments:
 - In NotificationService.cs line 45: add null check for user
 - In NotificationService.cs line 78: use Include to avoid N+1 query
 - In NotificationRepository.cs line 23: add async/await
-- In Modal.tsx line 156: wrap handler in useCallback
 Code only, no explanations
 ```
 
-#### Token Usage
+---
 
-~40-60 tokens (vs 500+ copying comments manually)
+### prreview - AI Code Review
 
-#### Requirements
+Generates an AI-powered code review for a Pull Request with optional publishing.
 
-- PAT must have **Code > Read** permission
-- Repository name must match exactly (case-insensitive)
+#### Features
+
+- ✅ Reviews **only changed code** (diff), not entire files
+- ✅ Validates against linked **User Story** and **Acceptance Criteria**
+- ✅ Classifies issues by severity (Critical, Important, Minor)
+- ✅ **Table format** for clear issue visualization
+- ✅ Posts **general comment** + **line-specific comments**
+- ✅ Copies review to clipboard
+
+#### Usage
+
+```bash
+# With repository name
+prreview <pr-id> <repo-name>
+
+# Using default repo from .env.local
+prreview <pr-id>
+```
+
+#### Example
+
+```bash
+prreview 64050 AP.AlixVault.API
+```
+
+#### Output Format
+
+```
+## Code Review
+
+### ✅ Good
+- Well-structured code with proper naming conventions
+- Correct use of async/await
+
+### 📋 Issues
+
+| Severity | Category | File | Line | Issue | Fix |
+|----------|----------|------|------|-------|-----|
+| 🔴 CRITICAL | Bugs | Service.cs | 45 | Null reference possible | Add null check |
+| 🟡 IMPORTANT | Performance | Query.cs | 120 | N+1 query in loop | Use Include() |
+| 🔵 MINOR | CleanCode | Helper.cs | 30 | Method too long | Extract methods |
+
+### 🧪 Missing Tests
+- Service.ProcessNotification
+- Query.GetUserData
+
+### 📋 AC Coverage
+
+| AC | Status | Where |
+|----|--------|-------|
+| 1 | ✅ | Service.Process() |
+| 2 | ❌ | Not implemented |
+
+### 📝 Verdict
+**APPROVE WITH COMMENTS**
+
+---
+*prreview*
+```
+
+#### Severity Classification
+
+| Severity | Categories | Verdict Impact |
+|----------|------------|----------------|
+| 🔴 CRITICAL | Bugs, Security | REQUEST CHANGES |
+| 🟡 IMPORTANT | Performance, CleanCode | APPROVE WITH COMMENTS |
+| 🔵 MINOR | BestPractices | APPROVE |
+
+#### Publishing
+
+After displaying the review:
+
+```
+✅ Review copied to clipboard!
+
+📤 Publish to PR? (y/n): y
+
+📤 Publishing...
+📝 Posting general review...
+📍 Posting 3 line comments...
+   ✓ Service.cs:45
+   ✓ Query.cs:120
+   ✓ Helper.cs:30
+
+✅ Review published!
+🔗 https://dev.azure.com/org/project/_git/repo/pullrequest/64050
+```
+
+When published:
+1. **General comment** with full review appears in PR comments
+2. **Line comments** appear directly on the code at each issue location
 
 ---
 
@@ -404,149 +410,46 @@ Install `snippets.code-snippets` in Cursor for quick follow-up prompts.
 
 ### Available Snippets
 
-#### Basic Actions
 | Trigger | Description | Output |
 |---------|-------------|--------|
 | `qa` | Add something | `Add: ...` |
 | `qf` | Fix bug | `Fix: ...` |
 | `qc` | Change something | `Change: X → Y` |
-| `qr` | Remove something | `Remove: ...` |
-
-#### Validation & Errors
-| Trigger | Description | Output |
-|---------|-------------|--------|
 | `qv` | Add validation | `Add validation: ...` |
-| `qe` | Error handling | `Add error handling: try-catch` |
-| `qnull` | Null check | `Fix: null check in variable` |
-| `qg` | Guard clause | `Add guard clause: condition → return` |
-
-#### Refactoring
-| Trigger | Description | Output |
-|---------|-------------|--------|
-| `qref` | Refactor | `Refactor: readability` |
-| `qex` | Extract | `Extract to function: ...` |
-| `qrn` | Rename | `Rename: old → new` |
-
-#### Testing
-| Trigger | Description | Output |
-|---------|-------------|--------|
 | `qtest` | Generate test | `Generate test for: ...` |
-| `qtac` | Test for AC | `Generate test for AC#1` |
-| `qmock` | Create mock | `Create mock for: ...` |
-
-#### Build & Verification
-| Trigger | Description | Output |
-|---------|-------------|--------|
-| `qbuild` | Compile | `Compile application and show errors` |
-| `qrun` | Run tests | `Run tests and show results` |
-| `qva` | Full verify | `Build + run all tests + show summary` |
-| `qfixbuild` | Fix build | `Fix compilation errors` |
-| `qfixtests` | Fix tests | `Fix failing tests` |
-
-#### Code Review
-| Trigger | Description | Output |
-|---------|-------------|--------|
+| `qbuild` | Compile | `Compile and show errors` |
 | `qrev` | Quick review | `Review pending changes` |
-| `qrevfull` | Full review | `Complete review: security, performance, clean code` |
-| `qrevsec` | Security | `Security review of pending changes` |
-| `qrevperf` | Performance | `Performance review of pending changes` |
-| `qrevfix` | Apply fixes | `Apply suggested review fixes` |
-
-#### GraphQL / HotChocolate
-| Trigger | Description | Output |
-|---------|-------------|--------|
 | `qmut` | Add mutation | `Add mutation: ...` |
-| `qquery` | Add query | `Add query: ...` |
-| `qres` | Add resolver | `Add resolver for: ...` |
-| `qinput` | Input type | `Create input record: ...` |
-| `qoutput` | Output type | `Create output record: ...` |
 
 ---
 
 ## Complete Workflow
 
-### Daily Development Flow
-
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    DEVELOPMENT WORKFLOW                      │
-└─────────────────────────────────────────────────────────────┘
-
 1. CHECK USER STORY
-   ┌──────────────────┐
-   │ us2check 123     │ → Verify US is complete
-   └──────────────────┘
-           │
-           ▼
-2. GENERATE BACKEND SPEC
-   ┌──────────────────┐
-   │ us2b 123         │ → Get optimized backend prompt
-   └──────────────────┘
-           │
-           ▼
+   └─→ us2check 123        → Verify US is complete
+
+2. GENERATE SPEC
+   └─→ us2b 123            → Backend prompt
+   └─→ us2f 123            → Frontend prompt
+
 3. PASTE IN CURSOR
-   ┌──────────────────┐
-   │ Ctrl+V + Enter   │ → Cursor generates code
-   └──────────────────┘
-           │
-           ▼
-4. FOLLOW-UP PROMPTS (snippets)
-   ┌──────────────────┐
-   │ qa, qf, qv, etc  │ → Quick adjustments (~5 tokens each)
-   └──────────────────┘
-           │
-           ▼
+   └─→ Ctrl+V + Enter      → Cursor generates code
+
+4. FOLLOW-UP (snippets)
+   └─→ qa, qf, qv          → Quick adjustments
+
 5. VERIFY
-   ┌──────────────────┐
-   │ qva              │ → Build + run tests
-   └──────────────────┘
-           │
-           ▼
-6. CODE REVIEW
-   ┌──────────────────┐
-   │ qrev / qrevfull  │ → Self-review before PR
-   └──────────────────┘
-           │
-           ▼
-7. CREATE PR
-   ┌──────────────────┐
-   │ Push + Create PR │ → Submit for review
-   └──────────────────┘
-           │
-           ▼
-8. FIX PR COMMENTS
-   ┌──────────────────┐
-   │ prfix 456        │ → Get fixes prompt
-   └──────────────────┘
-           │
-           ▼
-9. DONE ✅
-```
+   └─→ qva                 → Build + tests
 
-### Example Session
+6. CREATE PR
+   └─→ Push + Create PR
 
-```bash
-# 1. Check if User Story is ready
-us2check 199339
+7. REVIEW OTHERS' PRs
+   └─→ prreview 456        → AI review + publish
 
-# 2. Generate backend spec
-us2b 199339
-# → Ctrl+V in Cursor
-
-# 3. Cursor generates code, then refine:
-qa add logging                    # Add logging
-qv validate NotificationId        # Add validation
-qf null check line 45             # Fix bug
-
-# 4. Verify everything works
-qva                               # Build + tests
-
-# 5. Self code review
-qrevfull                          # Full review
-
-# 6. After PR feedback
-prfix 64050 AP.AlixVault.API
-# → Ctrl+V in Cursor to fix comments
+8. FIX YOUR PR COMMENTS
+   └─→ prfix 456           → Get fixes prompt
 ```
 
 ---
@@ -560,27 +463,27 @@ prfix 64050 AP.AlixVault.API
 | PR comments | 300-500 tokens | 40-60 tokens | **~88%** |
 | **Total per feature** | ~2000-3000 | ~200-300 | **~90%** |
 
-### Cost Impact
-
-If using paid Cursor/API:
-- Without optimization: ~$0.10-0.15 per feature
-- With US2CURSOR: ~$0.01-0.02 per feature
-- **Savings: ~$0.10+ per feature**
-
 ---
 
 ## Troubleshooting
+
+### Error: Missing config
+
+```
+❌ Missing config. Create .env.local with: AZURE_ORG, AZURE_PROJECT, AZURE_PAT, GROQ_API_KEY
+```
+
+**Solution**: Create `.env.local` with your credentials (see Configuration section).
 
 ### Error 401 (Unauthorized)
 
 **Cause**: PAT is invalid, expired, or missing permissions.
 
 **Solution**:
-1. Go to Azure DevOps → User Settings → Personal Access Tokens
-2. Regenerate token with correct permissions:
+1. Regenerate PAT with correct permissions:
    - Work Items: Read
-   - Code: Read (for prfix)
-3. Update `.env` with new token
+   - Code: Read & Write
+2. Update `.env.local` with new token
 
 ### Error 404 (Not Found)
 
@@ -588,26 +491,13 @@ If using paid Cursor/API:
 
 **Solution**:
 - Verify the ID exists in Azure DevOps
-- For `prfix`: check repository name matches exactly
-- List available repos: run `prfix 1` to see error with repo list
+- Check repository name matches exactly
 
-### Output Truncated
+### Error 403 when publishing review
 
-**Cause**: Response exceeded token limit.
+**Cause**: PAT doesn't have write permissions.
 
-**Solution**:
-- Script automatically retries once
-- If persists, User Story may be too large
-- Try breaking into smaller stories
-
-### Groq API Error
-
-**Cause**: Invalid API key or rate limit.
-
-**Solution**:
-- Verify API key in `.env`
-- Check Groq console for rate limits
-- Wait a moment and retry
+**Solution**: Regenerate PAT with **Code: Read & Write** scope.
 
 ---
 
@@ -628,16 +518,18 @@ If using paid Cursor/API:
 
 ```
 📁 us2cursor/
-├── 📄 .env                    ← Credentials (DO NOT SHARE)
-├── 📄 .gitignore              ← Ignores .env and node_modules
+├── 📄 .env                    ← Template (committed)
+├── 📄 .env.local              ← Your credentials (ignored)
+├── 📄 .gitignore              ← Ignores .env.local and node_modules
 ├── 📄 package.json            ← npm configuration
 ├── 📄 README.md               ← This documentation
 ├── 📄 snippets.code-snippets  ← Cursor snippets
-├── 📄 us2b.js                 ← Backend command
-├── 📄 us2f.js                 ← Frontend command
-├── 📄 us2check.js             ← Check/validate command
-├── 📄 prfix.js                ← PR fix command
-└── 📁 node_modules/           ← Dependencies
+├── 📄 us2b.js                 ← Backend spec command
+├── 📄 us2f.js                 ← Frontend spec command
+├── 📄 us2check.js             ← Check/validate US command
+├── 📄 prfix.js                ← Fix PR comments command
+├── 📄 prreview.js             ← AI code review command
+└── 📁 node_modules/           ← Dependencies (ignored)
 ```
 
 ---
@@ -650,7 +542,10 @@ If using paid Cursor/API:
 | 1.1.0 | Added us2f (frontend) |
 | 1.2.0 | Added us2validate |
 | 1.3.0 | Added us2pr, English output, improved prompts |
-| 1.4.0 | Renamed commands: us2validate → us2check, us2pr → prfix |
+| 1.4.0 | Renamed: us2validate → us2check, us2pr → prfix |
+| 1.5.0 | Added prreview (AI code review with publish option) |
+| 1.6.0 | prreview: table format, line comments, diff-only review |
+| 1.7.0 | Environment: .env + .env.local support |
 
 ---
 
