@@ -1,5 +1,4 @@
 # Local environment (contains secrets - NEVER commit)
-.env
 .env.local
 
 # Node

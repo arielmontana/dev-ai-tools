@@ -1,87 +1,34 @@
 #!/usr/bin/env node
 
 import clipboard from 'clipboardy';
-import { config } from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { existsSync } from 'fs';
-import * as readline from 'readline';
+import { loadEnvConfig, getConfig } from './lib/config.js';
+import { createAuthHeader, buildBaseUrl, getWorkItem } from './lib/azure.js';
+import { callGroq } from './lib/llm.js';
 import { fetchFigmaContent, isFigmaUrl } from './lib/figma.js';
+import { askQuestion, printHeader, printDivider, validateNumericId } from './lib/cli.js';
+import { TIMEOUTS } from './lib/constants.js';
 
-// Cargar .env desde el directorio del script
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+loadEnvConfig(import.meta.url);
+const config = getConfig(
+  ['AZURE_ORG', 'AZURE_PROJECT', 'AZURE_PAT', 'GROQ_API_KEY'],
+  ['FIGMA_PAT']
+);
 
-// Load .env first (defaults/template)
-config({ path: join(__dirname, '.env') });
+const baseUrl = buildBaseUrl(config.AZURE_ORG, config.AZURE_PROJECT);
+const authHeader = createAuthHeader(config.AZURE_PAT);
 
-// Load .env.local second (overrides) - has priority
-const localEnvPath = join(__dirname, '.env.local');
-if (existsSync(localEnvPath)) {
-  config({ path: localEnvPath, override: true });
-}
+/**
+ * Extract fields from work item with enhanced HTML parsing
+ * Preserves section structure for better analysis
+ */
+function extractFieldsEnhanced(workItem) {
+  const f = workItem.fields || {};
 
-// === CONFIGURACIÓN ===
-const AZURE_ORG = process.env.AZURE_ORG;
-const AZURE_PROJECT = process.env.AZURE_PROJECT;
-const AZURE_PAT = process.env.AZURE_PAT;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const FIGMA_PAT = process.env.FIGMA_PAT; // Optional - for fetching Figma content
-
-// Validar configuración
-if (!AZURE_ORG || !AZURE_PROJECT || !AZURE_PAT || !GROQ_API_KEY) {
-  console.error('❌ Error: Missing environment variables in .env');
-  console.error('   Required: AZURE_ORG, AZURE_PROJECT, AZURE_PAT, GROQ_API_KEY');
-  console.error('   Optional: FIGMA_PAT (for fetching Figma file content)');
-  process.exit(1);
-}
-
-// === READLINE HELPER ===
-function askQuestion(question) {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
-}
-
-// === AZURE DEVOPS ===
-async function getWorkItem(id) {
-  const url = `https://dev.azure.com/${AZURE_ORG}/${encodeURIComponent(AZURE_PROJECT)}/_apis/wit/workitems/${id}?api-version=7.0`;
-  
-  const res = await fetch(url, {
-    headers: {
-      'Authorization': `Basic ${Buffer.from(':' + AZURE_PAT).toString('base64')}`
-    }
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`Error ${res.status}: ${res.statusText}\n${errorText}`);
-  }
-
-  return res.json();
-}
-
-function extractFields(workItem) {
-  const f = workItem.fields;
-
-  // Parse description preserving section structure
   let rawDesc = f['System.Description'] || '';
-  // Replace block-level tags with newlines to preserve sections
   rawDesc = rawDesc.replace(/<\/(div|p|br|h[1-6]|li|ul|ol)>/gi, '\n');
   rawDesc = rawDesc.replace(/<(br|hr)\s*\/?>/gi, '\n');
-  // Remove remaining HTML tags
   rawDesc = rawDesc.replace(/<[^>]*>/g, '');
-  // Decode HTML entities
   rawDesc = rawDesc.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-  // Clean up multiple newlines but preserve structure
   rawDesc = rawDesc.replace(/\n{3,}/g, '\n\n').trim();
 
   return {
@@ -92,7 +39,6 @@ function extractFields(workItem) {
   };
 }
 
-// === GROQ VALIDATOR ===
 const VALIDATE_PROMPT = `You are a senior requirements analyst. Analyze this User Story and determine if it's complete for development.
 ALL OUTPUT MUST BE IN ENGLISH.
 
@@ -112,12 +58,12 @@ OUTPUT FORMAT (exact):
 ## Status: [COMPLETE | INCOMPLETE | NEEDS REVIEW]
 
 ## Description
-- ✅ Well-defined aspects
-- ❌ Missing or ambiguous aspects
+- Done: Well-defined aspects
+- Missing: Missing or ambiguous aspects
 
 ## Acceptance Criteria
-- ✅ Covered cases
-- ❌ NOT covered cases (list)
+- Covered: Covered cases
+- Not covered: NOT covered cases (list)
 
 ## Suggested ACs to add
 1. AC#X: [description of missing AC]
@@ -150,54 +96,25 @@ ${story.description || '(No description)'}
 Acceptance Criteria:
 ${story.acceptanceCriteria || '(No acceptance criteria)'}`;
 
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${GROQ_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: userMessage }],
-      max_tokens: 1500,
-      temperature: 0.2
-    })
+  return callGroq(config.GROQ_API_KEY, {
+    userPrompt: userMessage,
+    maxTokens: 1500,
+    temperature: 0.2,
+    timeoutMs: TIMEOUTS.LLM_LONG
   });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Groq API Error ${response.status}: ${errorText}`);
-  }
-
-  const data = await response.json();
-  return data.choices[0].message.content;
 }
 
-// === HELPERS ===
-function printHeader() {
-  console.log('');
-  console.log('╔═══════════════════════════════════════════════════════╗');
-  console.log('║   US2VALIDATE - Validate User Story completeness      ║');
-  console.log('╚═══════════════════════════════════════════════════════╝');
-  console.log('');
-}
-
-function printDivider() {
-  console.log('─'.repeat(55));
-}
-
-// === MAIN ===
 async function main() {
   const workItemId = process.argv[2];
 
-  printHeader();
+  printHeader('US2VALIDATE - Validate User Story completeness');
 
   if (!workItemId) {
-    console.log('  Usage: us2validate <work-item-id>');
+    console.log('  Usage: us2check <work-item-id>');
     console.log('');
     console.log('  Examples:');
-    console.log('    us2validate 12345');
-    console.log('    us2validate 67890');
+    console.log('    us2check 12345');
+    console.log('    us2check 67890');
     console.log('');
     console.log('  Function: Validates if a User Story is complete');
     console.log('            and suggests missing ACs');
@@ -205,24 +122,25 @@ async function main() {
     process.exit(1);
   }
 
+  const id = validateNumericId(workItemId, 'work item ID');
+
   try {
-    console.log(`  🔍 Fetching US #${workItemId} from Azure DevOps...`);
-    const workItem = await getWorkItem(workItemId);
-    const story = extractFields(workItem);
-    
-    console.log(`  📋 "${story.title}"`);
+    console.log(`  Fetching US #${id} from Azure DevOps...`);
+    const workItem = await getWorkItem(baseUrl, authHeader, id, TIMEOUTS.DEFAULT);
+    const story = extractFieldsEnhanced(workItem);
+
+    console.log(`  "${story.title}"`);
     console.log('');
     printDivider();
-    
-    // Ask for Figma context (supports multiple)
+
     console.log('');
-    console.log('  📐 FIGMA CONTEXT (optional)');
+    console.log('  FIGMA CONTEXT (optional)');
     console.log('');
     console.log('  You can provide Figma links or descriptions.');
-    if (FIGMA_PAT) {
-      console.log('  ✓ FIGMA_PAT detected - URLs will be fetched automatically');
+    if (config.FIGMA_PAT) {
+      console.log('  FIGMA_PAT detected - URLs will be fetched automatically');
     } else {
-      console.log('  ℹ No FIGMA_PAT - URLs will be passed as-is');
+      console.log('  No FIGMA_PAT - URLs will be passed as-is');
     }
     console.log('  Press Enter after each one. Empty line to finish.');
     console.log('');
@@ -235,15 +153,14 @@ async function main() {
         const input = await askQuestion(`  Figma #${figmaIndex}: `);
         if (!input) break;
 
-        // Check if input is a Figma URL
         if (isFigmaUrl(input)) {
-          console.log(`     ↳ Fetching Figma content...`);
-          const result = await fetchFigmaContent(input, FIGMA_PAT);
+          console.log('     Fetching Figma content...');
+          const result = await fetchFigmaContent(input, config.FIGMA_PAT);
           if (result.success) {
-            console.log(`     ✓ Extracted content from Figma`);
+            console.log('     Extracted content from Figma');
             figmaInputs.push(`[Screen ${figmaIndex}]\nURL: ${input}\n${result.summary}`);
           } else {
-            console.log(`     ⚠️  ${result.error} - using URL as description`);
+            console.log(`     ${result.error} - using URL as description`);
             figmaInputs.push(`[Screen ${figmaIndex}] ${result.fallback}`);
           }
         } else {
@@ -252,19 +169,24 @@ async function main() {
         figmaIndex++;
       }
       figmaContext = figmaInputs.join('\n\n');
-    } catch (err) {
-      console.log('  ⚠️  Could not read Figma input, continuing without it...');
+    } catch {
+      console.log('  Could not read Figma input, continuing without it...');
     }
-    
+
     console.log('');
-    console.log(`  ⚙️  Analyzing User Story with Groq (70B)...`);
+    console.log('  Analyzing User Story with Groq (70B)...');
     console.log('');
-    
+
     const validation = await validateUserStory(story, figmaContext);
-    
-    clipboard.writeSync(validation);
-    
-    console.log('  ✅ Analysis completed! (copied to clipboard)');
+
+    try {
+      clipboard.writeSync(validation);
+      console.log('  Analysis completed! (copied to clipboard)');
+    } catch {
+      console.log('  Analysis completed!');
+      console.log('  Clipboard unavailable. Output printed below.');
+    }
+
     console.log('');
     printDivider();
     console.log('');
@@ -272,11 +194,11 @@ async function main() {
     console.log('');
     printDivider();
     console.log('');
-    console.log('  💡 Tip: Copy suggested ACs to Product Owner');
+    console.log('  Tip: Copy suggested ACs to Product Owner');
     console.log('');
-    
+
   } catch (error) {
-    console.error(`  ❌ Error: ${error.message}`);
+    console.error(`  Error: ${error.message}`);
     console.log('');
     console.log('  Possible causes:');
     console.log('    - Work Item does not exist');
